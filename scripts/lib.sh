@@ -139,6 +139,40 @@ container_workdir_for_pwd() {
     fi
 }
 
+translate_host_path_prefix() {
+    local value="$1"
+    local host_root="$2"
+    local container_root="$3"
+
+    case "$value" in
+        "$host_root")
+            printf '%s\n' "$container_root"
+            ;;
+        "$host_root"/*)
+            printf '%s%s\n' "$container_root" "${value#$host_root}"
+            ;;
+        *)
+            printf '%s\n' "$value"
+            ;;
+    esac
+}
+
+translate_host_tool_args() {
+    local project_root="$1"
+    shift
+
+    TRANSLATED_TOOL_ARGS=()
+
+    local arg
+    for arg in "$@"; do
+        arg="$(translate_host_path_prefix "$arg" "$project_root" "$CONTAINER_PROJECT_ROOT")"
+        arg="$(translate_host_path_prefix "$arg" "$REPO_ROOT" "$CONTAINER_TOOL_ROOT")"
+        arg="$(translate_host_path_prefix "$arg" "$XILINX_INSTALL_DIR" "$CONTAINER_XILINX_ROOT")"
+        arg="$(translate_host_path_prefix "$arg" "$XILINX_CONFIG_DIR" "$CONTAINER_HOME/.Xilinx")"
+        TRANSLATED_TOOL_ARGS+=("$arg")
+    done
+}
+
 docker_tty_args() {
     DOCKER_TTY_ARGS=(-i)
     # Docker refuses -t when stdin is not a tty, which happens under
@@ -247,6 +281,8 @@ run_host_tool() {
     project_root="$(host_project_root)"
     working_dir="$(current_host_dir)"
     container_workdir="$(container_workdir_for_pwd "$project_root" "$working_dir")"
+    translate_host_tool_args "$project_root" "$@"
+    set -- "${TRANSLATED_TOOL_ARGS[@]}"
 
     docker_tty_args
     docker_cpu_args
