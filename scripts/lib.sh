@@ -141,7 +141,9 @@ container_workdir_for_pwd() {
 
 docker_tty_args() {
     DOCKER_TTY_ARGS=(-i)
-    if [[ -t 1 ]]; then
+    # Docker refuses -t when stdin is not a tty, which happens under
+    # make/fusesoc even if stdout is still attached to the terminal.
+    if [[ -t 0 && -t 1 ]]; then
         DOCKER_TTY_ARGS+=(-t)
     fi
 }
