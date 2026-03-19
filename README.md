@@ -1,142 +1,197 @@
+> [!NOTE]
+> GUI support was removed by design. This repository is now a CLI-only launcher for running Vivado and FuseSoC on macOS via Docker.
 
-> [!NOTE]  
-> Tested on MacOS 15 Sequoia, MacOS 26 Tahoe.
-> MacOS 14 is not supported.
+# Vivado CLI on macOS via Docker
 
-# Vivado on macOS via Docker
+`yokeTH/vivado-mac` provides shell-first wrappers for running Vivado CLI and FuseSoC from macOS while executing the tools inside a Linux `linux/amd64` Docker container.
 
-This repository provides a solution to run Xilinx Vivado on macOS using Docker containerization.
-## Support Version
+The goal is simple:
+
+```bash
+vivado
+vivado -mode batch -source scripts/build.tcl
+vivado -mode tcl
+fusesoc run --setup --no-export --work-root build/top mylib:fpga:top
+```
+
+You run those commands from your normal macOS terminal. The wrappers handle Docker image selection, project mounting, working directory preservation, and persistent Vivado state automatically.
+
+## Supported Vivado installers
+
 - 2025.2
 - 2024.2
 - 2023.2
 
-## Normal Vivado Workflow
+## What Changed
 
-The typical FPGA development workflow in Vivado consists of:
-1. RTL Design (Verilog/VHDL)
-2. Synthesis
-3. Implementation
-4. Generate Bitstream
-5. Program to [Basys3](https://digilent.com/reference/_media/basys3:basys3_rm.pdf?srsltid=AfmBOorSKF2T_MfS024F4IiVmQr1ViDkssoCMtlG48_RoII45ntqSTt2) Board
-
-## Table of Contents
-1. [Prerequisites](#prerequisites)
-2. [Installation](#installation)
-3. [Usage](#usage)
-4. [Troubleshooting](#troubleshooting)
+- GUI support was removed.
+- XQuartz is no longer required.
+- `DISPLAY`, `xhost`, and X11 startup logic were removed.
+- `start_container.sh` is now only a compatibility wrapper that forwards to the new CLI launcher.
 
 ## Prerequisites
-0. **Disk Space**
-    - Ensure you have at least 120GB of free disk space:
-        - ~80GB for Vivado download and Extract (this space will be freed after installation)
-        - ~40GB for program data
-1. **Homebrew**
-    - Install Homebrew by running:
-        ```bash
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-		```
-    - Follow any additional setup instructions provided by the installer
 
-2. **Docker Desktop**
-    - Install Docker Desktop for macOS from [docker.com](https://www.docker.com/products/docker-desktop)
-    - Alternatively, install via Homebrew:
-        ```bash
-        brew install --cask docker
-	  ```
-	- (Recommended) Alternative to Docker you can use OrbStack:
-		```bash
-		brew install --cask orbstack
-		```
+1. Docker Desktop for macOS, or OrbStack.
+2. At least 120 GB of free disk space for installer extraction and Vivado installation.
+3. A Linux Vivado installer downloaded from AMD/Xilinx.
 
-3. **XQuartz**
-    - Install via Homebrew:
-        ```bash
-        brew install --cask xquartz
-        ```
-    - After installation, restart your computer
-    - Open XQuartz and enable "Allow connections from network clients" in XQuartz preferences
-    - Navigate to XQuartz (next to Apple logo on top-left cornor) -> Settings -> Security -> Allow connections from network clients
+Optional:
 
-4. **OpenFPGALoader**
-    ```bash
-    brew install openfpgaloader
-    ```
+- `git` on the host, for automatic git-root mounting when you run the wrappers inside a repository.
 
-6. **Vivado Installer**
-    - Download Vivado installer for Linux from [AMD/Xilinx website](https://www.xilinx.com/support/download.html)
+## One-Time Setup
 
-## Installation
+Clone this repository somewhere on your Mac:
 
-1. **Get the Repository**
-    ```bash
-    git clone https://github.com/yokeTH/vivado-mac.git
-    # or download and extract the ZIP file
-    ```
+```bash
+git clone https://github.com/aaaadev/vivado-mac.git
+cd vivado-mac
+```
 
-2. **Run Setup Script**
-    ```bash
-    cd vivado-mac
-    ./scripts/setup.sh
-    ```
+Build the Docker image and install Vivado into `~/.vivado-mac/Xilinx`:
 
-3. **Install Vivado**
-    - When prompted, drag and drop the downloaded `Vivado installer` (from prerequisites no.4) into the terminal
-    - Follow the installation instructions in the Vivado installer
-    - Select desired Vivado components
+```bash
+./scripts/setup.sh /path/to/FPGAs_AdaptiveSoCs_Unified_2025.2_*.bin
+```
 
-## Usage
-0. **Ensure Display Setup**
-    - Check [X11 Display Issues](#x11-display-issues) if you encounter problems
-    - XQuartz must be running before starting Vivado
+If you omit the installer path, `setup.sh` will prompt for it.
 
-1. Start Xilinx Virtual Cable (XVC)
-Firstly, you have to plug the Basys3 in to your computer.
-    ```bash
-    openFPGALoader -b basys3 --xvc
-    ```
-3. Launch Vivado container:
-Open another terminal,
-    ```bash
-    ./scripts/start_container.sh
-    ```
-4. Vivado GUI will appear in XQuartz window
+Install the host-side wrappers into your user `bin` directory:
+
+```bash
+./scripts/install_wrappers.sh
+```
+
+By default, wrappers are symlinked into `~/bin` if it exists, otherwise `~/.local/bin`. You can also pass a target directory explicitly:
+
+```bash
+./scripts/install_wrappers.sh "$HOME/bin"
+```
+
+If that directory is not already on your `PATH`, add it in your shell startup file.
+
+## Persistent State
+
+The repository does not bake Vivado or licenses into the image.
+
+- Vivado installation is stored at `~/.vivado-mac/Xilinx`
+- Vivado license/config state is stored at `~/.Xilinx`
+
+Both are mounted into the container automatically by the wrappers.
+
+## CLI Usage
+
+### Vivado
+
+From any project directory:
+
+```bash
+vivado -mode batch -source scripts/build.tcl
+```
+
+Start an interactive Tcl session:
+
+```bash
+vivado
+```
+
+Explicit Tcl mode also works:
+
+```bash
+vivado -mode tcl
+```
+
+Note: plain `vivado` defaults to `vivado -mode tcl` in this repository's CLI-only workflow.
+
+### FuseSoC
+
+Run FuseSoC from the same Dockerized environment:
+
+```bash
+fusesoc run --setup --no-export --work-root build/top mylib:fpga:top
+```
+
+## Automatic Project Mounting
+
+The wrappers mount your project automatically:
+
+- If you run a wrapper inside a git repository, the git repo root is mounted at `/workspace`.
+- If you run it outside a git repository, the current working directory is mounted at `/workspace`.
+- Your current subdirectory is preserved as the container working directory.
+
+Example:
+
+```bash
+cd ~/src/my-fpga-repo/subdir/ip
+vivado -mode batch -source ../../scripts/build.tcl
+```
+
+In that case:
+
+- `~/src/my-fpga-repo` is mounted into the container
+- the container starts in `/workspace/subdir/ip`
+
+This keeps relative paths working without manually typing `docker run` mounts.
+
+## Wrapper Locations
+
+After `./scripts/install_wrappers.sh`, these host-side commands become available:
+
+- `vivado`
+- `fusesoc`
+
+If you do not want to install symlinks, you can run the repo-local wrappers directly:
+
+```bash
+./bin/vivado -mode batch -source scripts/build.tcl
+./bin/fusesoc library list
+```
+
+## Migration Note
+
+Previous versions of this repository focused on launching the Vivado GUI through XQuartz with:
+
+```bash
+./scripts/start_container.sh
+```
+
+That flow was removed intentionally.
+
+For old users:
+
+- `./scripts/start_container.sh` now prints a deprecation warning and launches the CLI wrapper instead.
+- Use `vivado` for interactive Tcl mode.
+- Use `vivado -mode batch -source ...` for non-interactive builds.
+- Use `fusesoc ...` for FuseSoC-based flows.
 
 ## Troubleshooting
 
-### Common Issues
+### `docker: command not found`
 
-1. **X11 Display Issues**
-    - Ensure XQuartz is running
-    - In XQuartz preferences:
-      - Go to Security tab
-      - Check "Allow connections from network clients"
-    - Try restarting XQuartz
-    - Run `xhost + localhost` before starting container
-2. **For permission issues**, ensure setup script has executable permissions (`chmod +x scripts/setup.sh`)
-3. **100 Killed Error**
-    If you encounter the following error:
-    ```
-    100 Killed ${X_JAVA_HOME} /bin/java ${ARGS} -cp ${X_CLASS_PATH}    comxilinx.installerapi.InstallerLauncher "$@"
-    ```
-    try to increase Docker memory limit: Open Docker Dashboard > Click on settings > Resource > Advanced you will see the Memory limitation
+Install Docker Desktop or OrbStack and make sure `docker` is available in your shell.
+
+### `Vivado installation not found`
+
+Run:
+
+```bash
+./scripts/setup.sh /path/to/your-installer.bin
+```
+
+The wrappers expect Vivado to exist under `~/.vivado-mac/Xilinx`.
+
+### Wrapper command not found
+
+Install the symlinks:
+
+```bash
+./scripts/install_wrappers.sh
+```
+
+Then ensure the chosen install directory is on your `PATH`.
 
 ## License
 
-This project is licensed under the BSD 3-Clause License - see the LICENSE file for details.
+This project is licensed under the BSD 3-Clause License.
 
-## Vivado License
-
-Vivado requires a license from AMD/Xilinx. Please obtain appropriate licensing from AMD/Xilinx website.
-
-## OpenFPGALoader License
-
-~~This repository contains the built binary of [OpenFPGALoader](https://github.com/trabucayre/openFPGALoader) that enable XVC feature for mac~~
-Now official openfpgaloader is enable xilinx virtual cable.
-
-## Disclaimer
-
-This repository only provides the environment setup to run Vivado on Apple Silicon Macs via Docker. It does not include Vivado software itself. Users must:
-- Download Vivado separately from AMD/Xilinx
-- Comply with AMD/Xilinx's licensing terms
-- Use at their own risk
+Vivado itself is not included. You must download it separately and comply with AMD/Xilinx licensing terms.

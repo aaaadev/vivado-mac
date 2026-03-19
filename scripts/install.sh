@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-script_dir=$(dirname -- "$(readlink -nf $0)";)
-source "$script_dir/headers.sh"
+source "$(cd -P -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.sh"
 
 declare -A VERSIONS=(
     ["202502"]="abe838aa2e2d3d9b10fea94165e9a303"
@@ -32,10 +32,10 @@ get_credentials() {
     mkdir -p "$secret_dir"
 
     # Prompt for credentials
-    echo -n "Enter your email address: "
-    read email
-    echo -n "Enter your password: "
-    read -s password
+    printf 'Enter your email address: '
+    read -r email
+    printf 'Enter your password: '
+    read -r -s password
     echo  # New line after password input
 
     # Save credentials to file
@@ -45,83 +45,84 @@ get_credentials() {
     echo "Credentials saved to $secret_file"
 }
 
-SECRET_FILE="$script_dir/secret.txt"
+readonly SECRET_FILE="${VIVADO_MAC_STATE_DIR:-/state}/secret.txt"
+readonly INSTALLATION_FILE_PATH="${VIVADO_INSTALLER_PATH:?VIVADO_INSTALLER_PATH is required}"
+readonly INSTALL_ROOT="${VIVADO_INSTALL_ROOT:-/state/Xilinx}"
+readonly EXTRACT_DIR="${VIVADO_MAC_STATE_DIR:-/state}/installer"
 
-INSTALLATION_FILE_PATH=$(cat "$INSTALLATION_BIN_LOG_PATH" | xargs)
+INSTALLER_HASH="$(md5sum "$INSTALLATION_FILE_PATH" | awk '{print $1}')"
+VERSION="$(get_version_from_hash "$INSTALLER_HASH")"
 
-INSTALLER_HASH=($(md5sum "$script_dir/$INSTALLATION_FILE_PATH"))
-VERSION=$(get_version_from_hash "$INSTALLER_HASH")
-
-if [ $VERSION == "" ]; then
-    error The installer $INSTALLATION_FILE_PATH hash not match. please make sure you download linux installer and support version.
+if [[ -z "$VERSION" ]]; then
+    error "The installer $INSTALLATION_FILE_PATH hash does not match a supported Linux installer."
     exit 1
 fi
 
-if [ $VERSION == "202401" ]; then
-    error version $VERSION is not support please use latest version of year.
+if [[ "$VERSION" == "202401" ]]; then
+    error "Version $VERSION is not supported. Please use the latest release for that year."
     exit 1
 fi
 
-info The installer is version $VERSION
+info "The installer is version $VERSION"
 
-step "try to find $INSTALLATION_FILE_PATH"
+step "Checking installer path $INSTALLATION_FILE_PATH"
 
-if [ -f "$script_dir/$INSTALLATION_FILE_PATH" ]; then
+if [[ -f "$INSTALLATION_FILE_PATH" ]]; then
     success "File exists: $INSTALLATION_FILE_PATH"
 else
     error "File does not exist: $INSTALLATION_FILE_PATH"
-    error "cleaning up cache files please run this script again"
-    rm $script_dir/installation_location.txt
-    exit
+    exit 1
 fi
 
-# cat $SECRET_FILE
-if ! [ -d "$script_dir/../installer" ]; then
-    step "start extract installer"
-    chmod u+x "$script_dir/$INSTALLATION_FILE_PATH"
-    eval "\"$script_dir/$INSTALLATION_FILE_PATH\" --target \"$script_dir/../installer\" --noexec"
+if [[ ! -d "$EXTRACT_DIR" ]]; then
+    step "Extracting installer"
+    chmod u+x "$INSTALLATION_FILE_PATH"
+    "$INSTALLATION_FILE_PATH" --target "$EXTRACT_DIR" --noexec
 else
-    debug "The installer already extracted"
+    debug "The installer was already extracted"
 fi
 
-step "Generate AuthTokenGen"
+step "Generating AuthTokenGen"
 
 GENERATED_TOKEN=false
 
-if [ -f "$SECRET_FILE" ]; then
+if [[ -f "$SECRET_FILE" ]]; then
         info "Credentials file found."
-        if ! expect -f $HOME/scripts/auth_token_gen.exp /home/user/installer/xsetup "$SECRET_FILE"; then
-            error secret.txt corrupt. removing $SECRET_FILE
-            rm $SECRET_FILE
+        if ! expect -f "$SCRIPT_DIR/auth_token_gen.exp" "$EXTRACT_DIR/xsetup" "$SECRET_FILE"; then
+            error "secret.txt is invalid; removing $SECRET_FILE"
+            rm -f "$SECRET_FILE"
         else
             GENERATED_TOKEN=true
         fi
 fi
 
-if ! $GENERATED_TOKEN && ! /home/user/installer/xsetup -b AuthTokenGen
+if ! $GENERATED_TOKEN && ! "$EXTRACT_DIR/xsetup" -b AuthTokenGen
 then
     warning "Can't Generate AuthTokenGen"
     step "now using expect method"
     step "Checking for credentials..."
-    if ! [ -f "$SECRET_FILE" ]; then
+    if [[ ! -f "$SECRET_FILE" ]]; then
         warning "Credentials file not found."
         get_credentials "$SECRET_FILE"
     fi
 
     # Check if secret.txt is readable and not empty
-    if ! [ -r "$SECRET_FILE" ] || ! [ -s "$SECRET_FILE" ]; then
-        warning "Error: Cannot read credentials file or file is empty"
+    if [[ ! -r "$SECRET_FILE" || ! -s "$SECRET_FILE" ]]; then
+        warning "Cannot read credentials file or file is empty"
         get_credentials "$SECRET_FILE"
     fi
 
     step "Generate AuthTokenGen"
 
-    expect -f $HOME/scripts/auth_token_gen.exp /home/user/installer/xsetup "$SECRET_FILE"
+    expect -f "$SCRIPT_DIR/auth_token_gen.exp" "$EXTRACT_DIR/xsetup" "$SECRET_FILE"
 else
     GENERATED_TOKEN=true
 fi
 
 if $GENERATED_TOKEN; then
-    step "Start Download and Installing"
-    /home/user/installer/xsetup -c "/home/user/scripts/vivado_settings_$VERSION.txt" -b Install -a XilinxEULA,3rdPartyEULA
+    local_settings_file="$(mktemp)"
+    trap 'rm -f "$local_settings_file"' EXIT
+    sed "s#^Destination=.*#Destination=$INSTALL_ROOT#" "$SCRIPT_DIR/vivado_settings_${VERSION}.txt" > "$local_settings_file"
+    step "Start download and installation into $INSTALL_ROOT"
+    "$EXTRACT_DIR/xsetup" -c "$local_settings_file" -b Install -a XilinxEULA,3rdPartyEULA
 fi
