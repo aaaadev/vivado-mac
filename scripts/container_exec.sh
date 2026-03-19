@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly XILINX_INSTALL_ROOT="${VIVADO_MAC_CONTAINER_XILINX_DIR:-/opt/Xilinx}"
+readonly XILINX_INSTALL_ROOT="${VIVADO_MAC_CONTAINER_XILINX_DIR:-/state/Xilinx}"
 
 find_vivado_dir() {
     local candidates=()

@@ -76,8 +76,7 @@ fi
 
 if [[ ! -d "$EXTRACT_DIR" ]]; then
     step "Extracting installer"
-    chmod u+x "$INSTALLATION_FILE_PATH"
-    "$INSTALLATION_FILE_PATH" --target "$EXTRACT_DIR" --noexec
+    bash "$INSTALLATION_FILE_PATH" --target "$EXTRACT_DIR" --noexec
 else
     debug "The installer was already extracted"
 fi
@@ -115,6 +114,7 @@ then
     step "Generate AuthTokenGen"
 
     expect -f "$SCRIPT_DIR/auth_token_gen.exp" "$EXTRACT_DIR/xsetup" "$SECRET_FILE"
+    GENERATED_TOKEN=true
 else
     GENERATED_TOKEN=true
 fi

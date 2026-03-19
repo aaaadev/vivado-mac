@@ -26,7 +26,7 @@ readonly INSTALLATION_BIN_LOG_PATH="${STATE_DIR}/installation_location.txt"
 readonly CONTAINER_HOME="/home/user"
 readonly CONTAINER_TOOL_ROOT="/opt/vivado-mac"
 readonly CONTAINER_PROJECT_ROOT="/workspace"
-readonly CONTAINER_XILINX_ROOT="/opt/Xilinx"
+readonly CONTAINER_XILINX_ROOT="/state/Xilinx"
 
 error() {
     printf '%b\n' "${RED}[ERROR] $*${NC}" >&2
@@ -146,6 +146,77 @@ docker_tty_args() {
     fi
 }
 
+host_cpu_count() {
+    local cpu_count="${VIVADO_MAC_CPU_COUNT:-}"
+
+    if [[ -z "$cpu_count" ]] && command -v getconf >/dev/null 2>&1; then
+        cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$cpu_count" ]] && command -v sysctl >/dev/null 2>&1; then
+        cpu_count="$(sysctl -n hw.logicalcpu 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$cpu_count" ]] && command -v nproc >/dev/null 2>&1; then
+        cpu_count="$(nproc 2>/dev/null || true)"
+    fi
+
+    if [[ "$cpu_count" =~ ^[1-9][0-9]*$ ]]; then
+        printf '%s\n' "$cpu_count"
+        return 0
+    fi
+
+    return 1
+}
+
+docker_cpu_args() {
+    local cpu_count
+    DOCKER_CPU_ARGS=()
+
+    if cpu_count="$(host_cpu_count)"; then
+        DOCKER_CPU_ARGS=(--cpus "$cpu_count")
+    fi
+}
+
+host_memory_limit() {
+    local memory_limit="${VIVADO_MAC_MEMORY:-}"
+    local page_size
+    local phys_pages
+
+    if [[ -n "$memory_limit" ]]; then
+        printf '%s\n' "$memory_limit"
+        return 0
+    fi
+
+    if command -v sysctl >/dev/null 2>&1; then
+        memory_limit="$(sysctl -n hw.memsize 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$memory_limit" ]] && command -v getconf >/dev/null 2>&1; then
+        page_size="$(getconf PAGESIZE 2>/dev/null || true)"
+        phys_pages="$(getconf _PHYS_PAGES 2>/dev/null || true)"
+        if [[ "$page_size" =~ ^[1-9][0-9]*$ ]] && [[ "$phys_pages" =~ ^[1-9][0-9]*$ ]]; then
+            memory_limit="$((page_size * phys_pages))"
+        fi
+    fi
+
+    if [[ "$memory_limit" =~ ^[1-9][0-9]*$ ]]; then
+        printf '%s\n' "$memory_limit"
+        return 0
+    fi
+
+    return 1
+}
+
+docker_memory_args() {
+    local memory_limit
+    DOCKER_MEMORY_ARGS=()
+
+    if memory_limit="$(host_memory_limit)"; then
+        DOCKER_MEMORY_ARGS=(--memory "$memory_limit")
+    fi
+}
+
 host_vivado_install_present() {
     [[ -d "$XILINX_INSTALL_DIR" ]] && find "$XILINX_INSTALL_DIR" -mindepth 3 -maxdepth 4 -type f -name vivado -path '*/bin/vivado' | grep -q .
 }
@@ -176,12 +247,16 @@ run_host_tool() {
     container_workdir="$(container_workdir_for_pwd "$project_root" "$working_dir")"
 
     docker_tty_args
+    docker_cpu_args
+    docker_memory_args
     docker_args+=(
         run
         --rm
         --platform
         linux/amd64
         "${DOCKER_TTY_ARGS[@]}"
+        "${DOCKER_CPU_ARGS[@]}"
+        "${DOCKER_MEMORY_ARGS[@]}"
         -e
         "TERM=${TERM:-xterm-256color}"
         -v

@@ -1,9 +1,9 @@
 > [!NOTE]
-> GUI support was removed by design. This repository is now a CLI-only launcher for running Vivado and FuseSoC on macOS via Docker.
+> GUI support was removed by design. This repository is now a CLI-only launcher for running Vivado on macOS via Docker.
 
 # Vivado CLI on macOS via Docker
 
-`yokeTH/vivado-mac` provides shell-first wrappers for running Vivado CLI and FuseSoC from macOS while executing the tools inside a Linux `linux/amd64` Docker container.
+`yokeTH/vivado-mac` provides shell-first wrappers for running Vivado CLI from macOS while executing the tool inside a Linux `linux/amd64` Docker container.
 
 The goal is simple:
 
@@ -11,7 +11,6 @@ The goal is simple:
 vivado
 vivado -mode batch -source scripts/build.tcl
 vivado -mode tcl
-fusesoc run --setup --no-export --work-root build/top mylib:fpga:top
 ```
 
 You run those commands from your normal macOS terminal. The wrappers handle Docker image selection, project mounting, working directory preservation, and persistent Vivado state automatically.
@@ -79,6 +78,8 @@ The repository does not bake Vivado or licenses into the image.
 
 Both are mounted into the container automatically by the wrappers.
 
+The wrappers also request the host's logical CPU count with Docker `--cpus` and the host physical memory size with Docker `--memory`, so Vivado runs are not artificially pinned below the host values by the wrapper itself. If Docker Desktop or OrbStack is configured with lower CPU or memory limits, those platform limits still apply.
+
 ## CLI Usage
 
 ### Vivado
@@ -102,14 +103,6 @@ vivado -mode tcl
 ```
 
 Note: plain `vivado` defaults to `vivado -mode tcl` in this repository's CLI-only workflow.
-
-### FuseSoC
-
-Run FuseSoC from the same Dockerized environment:
-
-```bash
-fusesoc run --setup --no-export --work-root build/top mylib:fpga:top
-```
 
 ## Automatic Project Mounting
 
@@ -138,13 +131,11 @@ This keeps relative paths working without manually typing `docker run` mounts.
 After `./scripts/install_wrappers.sh`, these host-side commands become available:
 
 - `vivado`
-- `fusesoc`
 
 If you do not want to install symlinks, you can run the repo-local wrappers directly:
 
 ```bash
 ./bin/vivado -mode batch -source scripts/build.tcl
-./bin/fusesoc library list
 ```
 
 ## Migration Note
@@ -162,7 +153,6 @@ For old users:
 - `./scripts/start_container.sh` now prints a deprecation warning and launches the CLI wrapper instead.
 - Use `vivado` for interactive Tcl mode.
 - Use `vivado -mode batch -source ...` for non-interactive builds.
-- Use `fusesoc ...` for FuseSoC-based flows.
 
 ## Troubleshooting
 

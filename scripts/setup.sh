@@ -50,12 +50,16 @@ main() {
     installer_name="$(basename "$installer_path")"
 
     docker_tty_args
+    docker_cpu_args
+    docker_memory_args
     docker_args+=(
         run
         --rm
         --platform
         linux/amd64
         "${DOCKER_TTY_ARGS[@]}"
+        "${DOCKER_CPU_ARGS[@]}"
+        "${DOCKER_MEMORY_ARGS[@]}"
         -v
         "$REPO_ROOT:$CONTAINER_TOOL_ROOT:ro"
         -v
