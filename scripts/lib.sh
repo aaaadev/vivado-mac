@@ -182,6 +182,38 @@ docker_tty_args() {
     fi
 }
 
+license_container_mac() {
+    local configured_mac="${VIVADO_MAC_DOCKER_MAC:-}"
+    local license_file="${XILINX_CONFIG_DIR}/Xilinx.lic"
+    local hostid
+
+    if [[ "$configured_mac" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]]; then
+        printf '%s\n' "${configured_mac,,}"
+        return 0
+    fi
+
+    [[ -f "$license_file" ]] || return 1
+
+    hostid="$(
+        sed -nE 's/.*HOSTID=([[:xdigit:]]{12}).*/\1/p' "$license_file" | head -n 1
+    )"
+
+    [[ "$hostid" =~ ^[[:xdigit:]]{12}$ ]] || return 1
+
+    printf '%s:%s:%s:%s:%s:%s\n' \
+        "${hostid:0:2}" "${hostid:2:2}" "${hostid:4:2}" \
+        "${hostid:6:2}" "${hostid:8:2}" "${hostid:10:2}" | tr '[:upper:]' '[:lower:]'
+}
+
+docker_network_args() {
+    local container_mac
+    DOCKER_NETWORK_ARGS=()
+
+    if container_mac="$(license_container_mac)"; then
+        DOCKER_NETWORK_ARGS=(--mac-address "$container_mac")
+    fi
+}
+
 host_cpu_count() {
     local cpu_count="${VIVADO_MAC_CPU_COUNT:-}"
 
@@ -285,6 +317,7 @@ run_host_tool() {
     set -- "${TRANSLATED_TOOL_ARGS[@]}"
 
     docker_tty_args
+    docker_network_args
     docker_cpu_args
     docker_memory_args
     docker_args+=(
@@ -293,6 +326,7 @@ run_host_tool() {
         --platform
         linux/amd64
         "${DOCKER_TTY_ARGS[@]}"
+        "${DOCKER_NETWORK_ARGS[@]}"
         "${DOCKER_CPU_ARGS[@]}"
         "${DOCKER_MEMORY_ARGS[@]}"
         -e
